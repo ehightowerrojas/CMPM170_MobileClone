@@ -46,6 +46,18 @@ export class Game extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.refreshPile();
+
+    //turn counter
+    this.turn = 1;
+    this.turnCounterButton = this.add
+      .text(50, 50, 'Turn: ' + this.turn, { fontSize: '20px', color: '#fff' })
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.newTurn());
+  }
+
+  newTurn() {
+    this.turn += 1;
+    this.turnCounterButton.setText('Turn: ' + this.turn);
   }
 
   drawTopCard() {
