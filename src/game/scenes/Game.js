@@ -4,6 +4,7 @@ import { Card, cardWidth, cardHeight } from '../objects/Card';
 
 const maxHandSpacing = 110;
 const handMargin = 40;
+const handGap = 40; // empty space between the two hands at screen center
 const maxPileLayers = 5;
 const pileLayerOffset = 2;
 
@@ -15,7 +16,9 @@ export class Game extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor('#01b76b');
     this.deck = new Deck(buildDeck(deckSize));
-    this.hand = [];
+
+    // Two separate hands; which one receives a card depends on the turn.
+    this.hands = { left: [], right: [] };
 
     this.pileX = this.scale.width / 2;
     this.pileY = this.scale.height / 2 - 80;
@@ -47,39 +50,60 @@ export class Game extends Phaser.Scene {
 
     this.refreshPile();
 
-    //turn counter
+    // Turn counter
     this.turn = 1;
     this.turnCounterButton = this.add
-      .text(50, 50, 'Turn: ' + this.turn, { fontSize: '20px', color: '#fff' })
+      .text(50, 50, '', { fontSize: '20px', color: '#fff' })
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.newTurn());
+    this.updateTurnText();
   }
 
   newTurn() {
     this.turn += 1;
-    this.turnCounterButton.setText('Turn: ' + this.turn);
+    this.updateTurnText();
+  }
+
+  updateTurnText() {
+    const side = this.handSideForTurn(this.turn);
+    this.turnCounterButton.setText(`Turn: ${this.turn} (draws ${side})`);
+  }
+
+  // Change this rule to control which side each turn draws to.
+  // Currently: odd turns -> left, even turns -> right.
+  handSideForTurn(turn) {
+    return turn % 2 === 1 ? 'left' : 'right';
   }
 
   drawTopCard() {
     const cardData = this.deck.drawTop();
     if (!cardData) return;
 
+    const side = this.handSideForTurn(this.turn);
     const card = new Card(this, 0, 0, cardData);
     card.showFace();
-    this.hand.push(card);
+    this.hands[side].push(card);
 
-    this.layoutHand();
+    this.layoutHand(side);
     this.refreshPile();
   }
 
-  layoutHand() {
-    const count = this.hand.length;
-    const availableWidth = this.scale.width - handMargin * 2 - cardWidth;
+  // Lays out one hand inside its half of the screen (left or right of center).
+  layoutHand(side) {
+    const hand = this.hands[side];
+    const count = hand.length;
+    const halfWidth = this.scale.width / 2;
+
+    const regionLeft = side === 'left' ? handMargin : halfWidth + handGap / 2;
+    const regionRight = side === 'left' ? halfWidth - handGap / 2 : this.scale.width - handMargin;
+
+    const availableWidth = Math.max(0, regionRight - regionLeft - cardWidth);
     const spacing = count > 1 ? Math.min(maxHandSpacing, availableWidth / (count - 1)) : 0;
-    const startX = this.scale.width / 2 - ((count - 1) * spacing) / 2;
+    const regionCenterX = (regionLeft + regionRight) / 2;
+    const startX = regionCenterX - ((count - 1) * spacing) / 2;
     const handY = this.scale.height - cardHeight / 2 - 30;
 
-    this.hand.forEach((card, i) => {
+    hand.forEach((card, i) => {
       card.setDepth(i + 1);
       card.setPosition(startX + i * spacing, handY);
     });
