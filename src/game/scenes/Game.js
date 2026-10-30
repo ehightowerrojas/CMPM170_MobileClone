@@ -57,6 +57,16 @@ export class Game extends Phaser.Scene {
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.newTurn());
     this.updateTurnText();
+
+    // Instructions
+    this.instructionsBasic = this.add.text(50, 80, 'DNA LAB — QUICK RULES\n2 players. Highest final value wins.\nSETUP\nSet ENDING aside. Shuffle and draw 7 each.\nReturn ENDING to the deck and shuffle.\nYOUR TURN\nDraw 1. Play 1 function card OR discard 1\nnumber / operation card. Alternate turns.\nENDING drawn: stop and reveal hands.\nDrag cards to move. Click to flip.\nClick the stack number to shuffle.\nThe bottom hand area is private.', {
+      fontSize: '16px',
+      color: '#fff',
+    });
+    this.instructionsFunction = this.add.text(50, 300, 'FUNCTION CARDS\nCLEAR: discard your remaining hand;\ndraw the same number of cards.\nSWAP: randomly exchange 1 card each,\nsimultaneously, then look.\nREMOVE 1: discard 1 card from either hand.\nENDING: stop play and build equations.\nFINAL EQUATION\nUse ALL numbers once; keep their signs.\nAttach × / powers to numbers.\nUnpaired operation cards do not count.\nNo parentheses or joining digits.\nPowers first, then × / ÷, then + / −.\nNo extra starting 1. Functions do not score.\nHigher result wins; equal results tie.', {
+      fontSize: '16px',
+      color: '#fff',
+    });
   }
 
   newTurn() {
