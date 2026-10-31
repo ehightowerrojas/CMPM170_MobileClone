@@ -35,6 +35,9 @@ export class Card extends Phaser.GameObjects.Container {
 
     this.setSize(cardWidth, cardHeight);
     scene.add.existing(this);
+
+    // Let the player pick the card up and drag it around.
+    this.setInteractive({ useHandCursor: true, draggable: true });
   }
 
   showFace() {

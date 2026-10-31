@@ -4,7 +4,6 @@ import { Card, cardWidth, cardHeight } from '../objects/Card';
 
 const maxHandSpacing = 110;
 const handMargin = 40;
-const handGap = 40; // empty space between the two hands at screen center
 const maxPileLayers = 5;
 const pileLayerOffset = 2;
 
@@ -16,9 +15,7 @@ export class Game extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor('#01b76b');
     this.deck = new Deck(buildDeck(deckSize));
-
-    // Two separate hands; which one receives a card depends on the turn.
-    this.hands = { left: [], right: [] };
+    this.hand = [];
 
     this.pileX = this.scale.width / 2;
     this.pileY = this.scale.height / 2 - 80;
@@ -48,74 +45,86 @@ export class Game extends Phaser.Scene {
       .text(this.pileX, this.pileY + cardHeight / 2 + 24, '', { fontSize: '20px', color: '#fff' })
       .setOrigin(0.5);
 
+    this.draggedCard = null;
+    this.setupHandDragging();
+
     this.refreshPile();
+  }
 
-    // Turn counter
-    this.turn = 1;
-    this.turnCounterButton = this.add
-      .text(50, 50, '', { fontSize: '20px', color: '#fff' })
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.newTurn());
-    this.updateTurnText();
-
-    // Instructions
-    this.instructionsBasic = this.add.text(50, 80, 'DNA LAB — QUICK RULES\n2 players. Highest final value wins.\nSETUP\nSet ENDING aside. Shuffle and draw 7 each.\nReturn ENDING to the deck and shuffle.\nYOUR TURN\nDraw 1. Play 1 function card OR discard 1\nnumber / operation card. Alternate turns.\nENDING drawn: stop and reveal hands.\nDrag cards to move. Click to flip.\nClick the stack number to shuffle.\nThe bottom hand area is private.', {
-      fontSize: '16px',
-      color: '#fff',
+  // Dragging a card along the hand moves it to a new position; the other cards slide aside.
+  setupHandDragging() {
+    this.input.on('dragstart', (pointer, card) => {
+      if (!this.hand.includes(card)) return;
+      this.draggedCard = card;
+      this.tweens.killTweensOf(card);
+      card.setDepth(1000);
     });
-    this.instructionsFunction = this.add.text(50, 300, 'FUNCTION CARDS\nCLEAR: discard your remaining hand;\ndraw the same number of cards.\nSWAP: randomly exchange 1 card each,\nsimultaneously, then look.\nREMOVE 1: discard 1 card from either hand.\nENDING: stop play and build equations.\nFINAL EQUATION\nUse ALL numbers once; keep their signs.\nAttach × / powers to numbers.\nUnpaired operation cards do not count.\nNo parentheses or joining digits.\nPowers first, then × / ÷, then + / −.\nNo extra starting 1. Functions do not score.\nHigher result wins; equal results tie.', {
-      fontSize: '16px',
-      color: '#fff',
+
+    this.input.on('drag', (pointer, card, dragX, dragY) => {
+      if (card !== this.draggedCard) return;
+      card.setPosition(dragX, dragY);
+
+      const oldIndex = this.hand.indexOf(card);
+      const newIndex = this.handIndexForX(dragX);
+      if (newIndex !== oldIndex) {
+        this.hand.splice(oldIndex, 1);
+        this.hand.splice(newIndex, 0, card);
+        this.layoutHand(true);
+      }
+    });
+
+    this.input.on('dragend', (pointer, card) => {
+      if (card !== this.draggedCard) return;
+      this.draggedCard = null;
+      this.layoutHand(true);
     });
   }
 
-  newTurn() {
-    this.turn += 1;
-    this.updateTurnText();
+  // Positions of each slot in the hand, shared by layout and drag logic.
+  handSlots() {
+    const count = this.hand.length;
+    const availableWidth = this.scale.width - handMargin * 2 - cardWidth;
+    const spacing = count > 1 ? Math.min(maxHandSpacing, availableWidth / (count - 1)) : 0;
+    const startX = this.scale.width / 2 - ((count - 1) * spacing) / 2;
+    const y = this.scale.height - cardHeight / 2 - 30;
+    return { count, spacing, startX, y };
   }
 
-  updateTurnText() {
-    const side = this.handSideForTurn(this.turn);
-    this.turnCounterButton.setText(`Turn: ${this.turn} (draws ${side})`);
-  }
-
-  // Change this rule to control which side each turn draws to.
-  // Currently: odd turns -> left, even turns -> right.
-  handSideForTurn(turn) {
-    return turn % 2 === 1 ? 'left' : 'right';
+  handIndexForX(x) {
+    const { count, spacing, startX } = this.handSlots();
+    if (count <= 1 || spacing === 0) return 0;
+    const index = Math.round((x - startX) / spacing);
+    return Phaser.Math.Clamp(index, 0, count - 1);
   }
 
   drawTopCard() {
     const cardData = this.deck.drawTop();
     if (!cardData) return;
 
-    const side = this.handSideForTurn(this.turn);
     const card = new Card(this, 0, 0, cardData);
     card.showFace();
-    this.hands[side].push(card);
+    this.hand.push(card);
 
-    this.layoutHand(side);
+    this.layoutHand();
     this.refreshPile();
   }
 
-  // Lays out one hand inside its half of the screen (left or right of center).
-  layoutHand(side) {
-    const hand = this.hands[side];
-    const count = hand.length;
-    const halfWidth = this.scale.width / 2;
+  layoutHand(animate = false) {
+    const { spacing, startX, y } = this.handSlots();
 
-    const regionLeft = side === 'left' ? handMargin : halfWidth + handGap / 2;
-    const regionRight = side === 'left' ? halfWidth - handGap / 2 : this.scale.width - handMargin;
+    this.hand.forEach((card, i) => {
+      // The card being dragged stays under the pointer and on top.
+      if (card === this.draggedCard) return;
 
-    const availableWidth = Math.max(0, regionRight - regionLeft - cardWidth);
-    const spacing = count > 1 ? Math.min(maxHandSpacing, availableWidth / (count - 1)) : 0;
-    const regionCenterX = (regionLeft + regionRight) / 2;
-    const startX = regionCenterX - ((count - 1) * spacing) / 2;
-    const handY = this.scale.height - cardHeight / 2 - 30;
-
-    hand.forEach((card, i) => {
       card.setDepth(i + 1);
-      card.setPosition(startX + i * spacing, handY);
+      const x = startX + i * spacing;
+
+      this.tweens.killTweensOf(card);
+      if (animate) {
+        this.tweens.add({ targets: card, x, y, duration: 150, ease: 'Quad.easeOut' });
+      } else {
+        card.setPosition(x, y);
+      }
     });
   }
 
