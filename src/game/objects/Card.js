@@ -16,14 +16,36 @@ export class Card extends Phaser.GameObjects.Container {
     const faceBg = scene.add
       .rectangle(0, 0, cardWidth, cardHeight, faceColor)
       .setStrokeStyle(2, borderColor);
-    const faceLabel = scene.add
-      .text(0, 0, cardData.name, {
+    const cardText = cardData.label || cardData.name || 'Card';
+    const arithmeticMatch = cardText.match(/(Stable DNA|Unstable DNA|DNA Replication|DNA Amplification)\s+([+\-x^]\d+)/);
+
+    let faceLabel;
+    if (arithmeticMatch) {
+      const [, prefix, arithmetic] = arithmeticMatch;
+      const prefixText = scene.add.text(0, -8, prefix, {
         color: '#000',
-        fontSize: '18px',
+        fontSize: '12px',
         align: 'center',
         wordWrap: { width: cardWidth - 12 },
-      })
-      .setOrigin(0.5);
+      }).setOrigin(0.5);
+      const arithmeticText = scene.add.text(0, 12, arithmetic, {
+        color: '#000',
+        fontSize: '18px',
+        fontStyle: 'bold',
+        align: 'center',
+      }).setOrigin(0.5);
+      faceLabel = scene.add.container(0, 0, [prefixText, arithmeticText]);
+    } else {
+      faceLabel = scene.add
+        .text(0, 0, cardText, {
+          color: '#000',
+          fontSize: '15px',
+          align: 'center',
+          wordWrap: { width: cardWidth - 12 },
+        })
+        .setOrigin(0.5);
+    }
+
     const face = scene.add.container(0, 0, [faceBg, faceLabel]).setVisible(false);
 
     super(scene, x, y, [back, face]);
