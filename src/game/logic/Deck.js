@@ -62,7 +62,7 @@ export function buildDeck(size = deckSize) {
   }
 
   for (let i = 0; i < 4; i++) {
-    cards.push(buildCard('swap', 0, 'DNA Exchange', 'Placeholder for future multiplayer swap effect'));
+    cards.push(buildCard('swap', 0, 'DNA Exchange', 'Choose one opponent card and exchange it for one of yours'));
   }
 
   for (let i = 0; i < 4; i++) {

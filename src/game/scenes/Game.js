@@ -30,6 +30,8 @@ export class Game extends Phaser.Scene {
     ];
     this.currentIndex = 0;
     this.turnNumber = 1;
+    this.drawsRemaining = 1;
+    this.extraDrawForNextPlayer = false;
     // Turns 1..maxTurns: 'draw' -> 'play' -> 'done'.
     // After the last turn: 'build' (each player assembles their equation in turn).
     this.phase = 'draw';
@@ -85,10 +87,15 @@ export class Game extends Phaser.Scene {
         .setDepth(0);
 
       return this.add
-        .text(width / 2, y - this.benchHeight / 2 - 12, `${player.name.toUpperCase()} — EQUATION`, {
-          fontSize: '16px',
-          color: '#fff',
-        })
+        .text(
+          width / 2,
+          i === 0 ? y + this.benchHeight / 2 + 12 : y - this.benchHeight / 2 - 12,
+          `${player.name.toUpperCase()} — EQUATION`,
+          {
+            fontSize: '16px',
+            color: '#fff',
+          },
+        )
         .setOrigin(0.5)
         .setDepth(5000);
     });
@@ -272,8 +279,24 @@ export class Game extends Phaser.Scene {
   // ---- Dragging: reorder your hand; during the build phase, also move cards to/from your bench ----
 
   setupDragging() {
+    this.input.on('gameobjectdown', (pointer, gameObject) => {
+      if (this.phase === 'dnaExchangeOpponent') {
+        this.selectDnaExchangeOpponent(gameObject);
+      } else if (this.phase === 'dnaExchangeOwn') {
+        this.selectDnaExchangeOwn(gameObject);
+      } else if (this.phase === 'sampleDestructionOpponent') {
+        this.selectSampleDestructionOpponent(gameObject);
+      }
+    });
+
     this.input.on('dragstart', (pointer, card) => {
-      if (this.gameEnded || this.handoffObjects) return;
+      if (
+        this.gameEnded ||
+        this.handoffObjects ||
+        this.phase.startsWith('dnaExchange') ||
+        this.phase === 'sampleDestructionOpponent'
+      )
+        return;
       const location = this.locationOf(card);
       if (!location) return; // not one of the current player's cards
 
@@ -366,7 +389,12 @@ export class Game extends Phaser.Scene {
         card.setPosition(this.discardPileX + offset, this.pileY + offset);
       }
 
-      this.phase = 'done';
+      if (
+        this.phase !== 'labResetDraw' &&
+        !this.phase.startsWith('dnaExchange') &&
+        this.phase !== 'sampleDestructionOpponent'
+      )
+        this.phase = 'done';
       this.refreshPileZones();
       this.refreshTurnText();
     });
@@ -376,8 +404,142 @@ export class Game extends Phaser.Scene {
 
   playFunctionCard(card) {
     if (card.cardData.kind === 'swap') {
-      this.swapRandomCards();
+      this.startDnaExchange();
     }
+    if (card.cardData.kind === 'clear') {
+      this.startLabReset();
+    }
+    if (card.cardData.kind === 'remove') {
+      this.startSampleDestruction();
+    }
+  }
+
+  startDnaExchange() {
+    const opponent = this.otherPlayer();
+    if (opponent.hand.length === 0 || this.currentPlayer().hand.length === 0) {
+      this.phase = 'done';
+      this.countText.setText('DNA Exchange needs cards in both hands · End Turn');
+      this.refreshTurnText();
+      return;
+    }
+
+    opponent.hand.forEach((card) => {
+      card.showBack();
+      card.setVisible(true);
+    });
+    this.layoutRow(opponent.hand, this.benchYs[1]);
+    this.phase = 'dnaExchangeOpponent';
+    this.countText.setText(`DNA Exchange: choose a card from ${opponent.name}`);
+    this.refreshTurnText();
+  }
+
+  selectDnaExchangeOpponent(card) {
+    if (this.phase !== 'dnaExchangeOpponent' || !this.otherPlayer().hand.includes(card)) return;
+
+    this.dnaExchangeTarget = card;
+    this.phase = 'dnaExchangeOwn';
+    this.countText.setText('DNA Exchange: choose one of your cards to swap');
+    this.refreshTurnText();
+  }
+
+  selectDnaExchangeOwn(card) {
+    if (this.phase !== 'dnaExchangeOwn' || !this.currentPlayer().hand.includes(card)) return;
+
+    const player = this.currentPlayer();
+    const opponent = this.otherPlayer();
+    const ownIndex = player.hand.indexOf(card);
+    const opponentIndex = opponent.hand.indexOf(this.dnaExchangeTarget);
+    const exchangedCard = this.dnaExchangeTarget;
+
+    player.hand[ownIndex] = exchangedCard;
+    opponent.hand[opponentIndex] = card;
+    exchangedCard.showFace();
+    card.showBack();
+    this.dnaExchangeTarget = null;
+
+    opponent.hand.forEach((opponentCard) => opponentCard.setVisible(true));
+    player.hand.forEach((playerCard) => playerCard.setVisible(true));
+    this.layoutHand();
+    this.layoutRow(opponent.hand, this.benchYs[1]);
+    this.phase = 'done';
+    this.countText.setText('DNA Exchange complete · End Turn');
+    this.refreshTurnText();
+  }
+
+  startSampleDestruction() {
+    const opponent = this.otherPlayer();
+    if (opponent.hand.length === 0) {
+      this.phase = 'done';
+      this.countText.setText('Sample Destruction: opponent has no cards · End Turn');
+      this.refreshTurnText();
+      return;
+    }
+
+    opponent.hand.forEach((card) => {
+      card.showBack();
+      card.setVisible(true);
+    });
+    this.layoutRow(opponent.hand, this.benchYs[1]);
+    this.phase = 'sampleDestructionOpponent';
+    this.countText.setText(`Sample Destruction: choose a card from ${opponent.name}`);
+    this.refreshTurnText();
+  }
+
+  selectSampleDestructionOpponent(card) {
+    if (this.phase !== 'sampleDestructionOpponent' || !this.otherPlayer().hand.includes(card)) return;
+
+    const opponent = this.otherPlayer();
+    opponent.hand.splice(opponent.hand.indexOf(card), 1);
+    card.showFace();
+    card.disableInteractive();
+
+    this.discardPile.push(card);
+    const offset = (this.discardPile.length - 1) * 2;
+    card.setDepth(100 + this.discardPile.length);
+    card.setPosition(this.discardPileX + offset, this.pileY + offset);
+    opponent.hand.forEach((opponentCard) => opponentCard.setVisible(false));
+
+    this.extraDrawForNextPlayer = true;
+    this.phase = 'done';
+    this.refreshPileZones();
+    this.countText.setText('Sample Destruction complete · End Turn');
+    this.refreshTurnText();
+  }
+
+  startLabReset() {
+    const player = this.currentPlayer();
+    player.hand.forEach((card) => card.destroy());
+    player.hand = [];
+    this.labResetDrawsRemaining = startingHandSize;
+    this.phase = 'labResetDraw';
+    this.layoutHand();
+    this.countText.setText(`Lab Reset: draw ${this.labResetDrawsRemaining} cards`);
+    this.refreshTurnText();
+  }
+
+  drawLabResetCard() {
+    const cardData = this.deck.drawTop();
+    if (!cardData) {
+      this.labResetDrawsRemaining = 0;
+      this.phase = 'done';
+      this.countText.setText('Lab Reset: deck empty · End Turn');
+      this.refreshPile();
+      this.refreshTurnText();
+      return;
+    }
+
+    this.currentPlayer().hand.push(this.createCard(cardData));
+    this.labResetDrawsRemaining -= 1;
+    this.layoutHand();
+    this.refreshPile();
+
+    if (this.labResetDrawsRemaining === 0) {
+      this.phase = 'done';
+      this.countText.setText('Lab Reset complete · End Turn');
+    } else {
+      this.countText.setText(`Lab Reset: draw ${this.labResetDrawsRemaining} more cards`);
+    }
+    this.refreshTurnText();
   }
 
   // SWAP: each player gives the other one random card from their hand.
@@ -409,6 +571,11 @@ export class Game extends Phaser.Scene {
   drawTopCard() {
     if (this.gameEnded || this.handoffObjects) return;
 
+    if (this.phase === 'labResetDraw') {
+      this.drawLabResetCard();
+      return;
+    }
+
     if (this.phase === 'build') {
       this.countText.setText('No more drawing: build your equation');
       return;
@@ -419,19 +586,40 @@ export class Game extends Phaser.Scene {
     }
 
     const cardData = this.deck.drawTop();
-    if (!cardData) return;
+    if (!cardData) {
+      this.drawsRemaining = 0;
+      this.phase = 'play';
+      this.countText.setText('Deck empty');
+      this.refreshTurnText();
+      return;
+    }
 
     this.currentPlayer().hand.push(this.createCard(cardData));
-    this.phase = 'play';
+    this.drawsRemaining -= 1;
+    if (this.drawsRemaining === 0) this.phase = 'play';
 
     this.layoutHand();
     this.refreshPile();
+    if (this.phase === 'draw') this.countText.setText(`Draw ${this.drawsRemaining} more card`);
     this.refreshTurnText();
   }
 
   endTurn() {
     if (this.gameEnded || this.handoffObjects) return;
     const player = this.currentPlayer();
+
+    if (this.phase.startsWith('dnaExchange')) {
+      this.countText.setText(
+        this.phase === 'dnaExchangeOpponent'
+          ? 'Choose an opponent card first'
+          : 'Choose one of your cards first',
+      );
+      return;
+    }
+    if (this.phase === 'sampleDestructionOpponent') {
+      this.countText.setText('Choose an opponent card first');
+      return;
+    }
 
     if (this.phase === 'build') {
       this.finishBuilding();
@@ -452,8 +640,11 @@ export class Game extends Phaser.Scene {
       return;
     }
 
+    this.labResetDrawsRemaining = null;
     this.turnNumber += 1;
     this.currentIndex = 1 - this.currentIndex;
+    this.drawsRemaining = this.extraDrawForNextPlayer ? 2 : 1;
+    this.extraDrawForNextPlayer = false;
     this.phase = this.deck.remaining > 0 ? 'draw' : 'play';
     this.refreshPile();
     this.showHandoff();
@@ -520,7 +711,10 @@ export class Game extends Phaser.Scene {
     this.handoffObjects = null;
 
     const player = this.currentPlayer();
-    player.hand.forEach((card) => card.setVisible(true));
+    player.hand.forEach((card) => {
+      card.showFace();
+      card.setVisible(true);
+    });
     if (this.phase === 'build') player.bench.forEach((card) => card.setVisible(true));
     this.layoutCurrentRows();
     this.refreshTurnText();
@@ -529,6 +723,27 @@ export class Game extends Phaser.Scene {
   refreshTurnText() {
     if (this.gameEnded) return;
     const name = this.currentPlayer().name;
+
+    if (this.phase === 'labResetDraw') {
+      this.turnText.setText(`Lab Reset · ${name}: draw ${this.labResetDrawsRemaining} cards`);
+      return;
+    }
+    if (this.phase === 'dnaExchangeOpponent') {
+      this.turnText.setText(`DNA Exchange · ${name}: choose an opponent card`);
+      return;
+    }
+    if (this.phase === 'dnaExchangeOwn') {
+      this.turnText.setText(`DNA Exchange · ${name}: choose your card`);
+      return;
+    }
+    if (this.phase === 'sampleDestructionOpponent') {
+      this.turnText.setText(`Sample Destruction · ${name}: choose an opponent card`);
+      return;
+    }
+    if (this.phase === 'done' && this.labResetDrawsRemaining === 0 && this.currentPlayer().hand.length > 0) {
+      this.turnText.setText(`Lab Reset · ${name}: End Turn`);
+      return;
+    }
 
     if (this.phase === 'build') {
       this.turnText.setText(`Build phase · ${name}: drag cards onto your equation, then Done Building`);
@@ -542,7 +757,8 @@ export class Game extends Phaser.Scene {
       done: isLastTurn ? 'End Turn to start building equations' : 'End Turn',
     };
 
-    this.turnText.setText(`Turn ${this.turnNumber}/${maxTurns} · ${name}: ${instructions[this.phase]}`);
+    const instruction = this.phase === 'draw' ? `draw ${this.drawsRemaining} card${this.drawsRemaining === 1 ? '' : 's'}` : instructions[this.phase];
+    this.turnText.setText(`Turn ${this.turnNumber}/${maxTurns} · ${name}: ${instruction}`);
   }
 
   // ---- Piles ----
