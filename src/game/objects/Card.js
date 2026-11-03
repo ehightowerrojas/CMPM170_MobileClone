@@ -67,4 +67,10 @@ export class Card extends Phaser.GameObjects.Container {
     this.back.setVisible(false);
     this.face.setVisible(true);
   }
+
+  showBack() {
+    this.faceUp = false;
+    this.back.setVisible(true);
+    this.face.setVisible(false);
+  }
 }
